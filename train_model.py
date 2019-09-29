@@ -74,7 +74,7 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
         os.makedirs(save_dir)
     write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number)
 
-    model = build_net.build_FCNN()
+    model = build_net.build_combo()
     # write .txt file with model summary
     filename = os.path.join(save_dir, 'modelsummary.txt')
     with open(filename, 'w') as f:
@@ -85,14 +85,19 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
     model.compile(optimizer=adam, loss='mse', metrics=['mae'])
     data = np.load(data_path)
     features = data[:, :500]
+    features_conv = data[:, :500]
     targets = data[:, 500:]
+    features_conv = features_conv / np.max(features_conv)
+    features_conv = tf.expand_dims(features_conv, -1)
+    features -= features.mean(0)
+    features /= features.std(0)
+    targets /= targets.max(axis=0)
     checkpoint_path = os.path.join(save_dir, "checkpoints/cp-{epoch:04d}.ckpt")
     cp_callback = tf.keras.callbacks.ModelCheckpoint(
         checkpoint_path, verbose=1, save_weights_only=True,
         # Save weights, every 5-epochs.
         period=5)
-
-    history = model.fit(features,
+    history = model.fit([features, features_conv],
                         targets,
                         validation_split=0.2,
                         epochs=epochs,
