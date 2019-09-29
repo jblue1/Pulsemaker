@@ -1,7 +1,8 @@
 import numpy as np
+import click
 
 
-def load_by_string(single_path, double_path, file_name):
+def load_data(single_path, double_path, file_name):
     """
     Takes traces from text data and loads them into a numpy array. Each row is a trace, first 500 columns are trace
     data, last 2 columns are time offsets. Saves the array.
@@ -9,23 +10,27 @@ def load_by_string(single_path, double_path, file_name):
     :param str double_path: Path to .txt file containing data from double pulses
     :param str file_name: Name for .npy file
     """
+    # load the single pulses
     with open(single_path) as f:
         str = f.read()
-    list = str.split('\n500')
+    list = str.split('\n500')  # '\n500 is the start of each seperate trace
     num_pulses = len(list)
-    data = np.zeros((502, num_pulses*2))
+    data = np.zeros((502, num_pulses*2))  # *2 because will load double pulses into same array later
     for i in range(num_pulses):
         if i % 500 == 0:
             print(i)
         lines = list[i].split('\n')
         targets = lines[0].split()
-        if i < 1:
-            data[500, i] = float(targets[4])
-            data[501, i] = float(targets[9])
+
+        if i < 1:  # for some reason when the lines are split the first array has an extra element, so have to slice
+            #  differently
+            data[500, i] = float(targets[4])  # time offset for first pulse
+            data[501, i] = float(targets[9])  # time offset for second pulse
         else:
-            data[500, i] = float(targets[3])
-            data[501, i] = float(targets[8])
+            data[500, i] = float(targets[3])  # time offset for first pulse
+            data[501, i] = float(targets[8])  # time offset for second pulse
         data[:500, i] = np.genfromtxt(lines, skip_header=1, usecols=(1))
+    # load the double pulses
     with open(double_path) as f:
          str = f.read()
     list = str.split('\n500')
@@ -42,21 +47,16 @@ def load_by_string(single_path, double_path, file_name):
             data[501, i + num_pulses] = float(targets[8])
         data[:500, i + num_pulses] = np.genfromtxt(lines, skip_header=1, usecols=(1))
 
-    print(data.shape)
     data = np.transpose(data)
-    print(data.shape)
-    print(data.mean(0).shape)
     np.save(file_name, data)
 
 
-def main():
-    load_by_string('singles_100k_0_1.txt',
-                   'doubles_100k_0_1.txt',
-                   '200k_singles_doubles_0')
-    #load_timeoffset_data('singles_100k_0_1.txt',
-                        # 'doubles_100k_0_1.txt',
-                        # 200000,
-                         #'200k_singles_doubles_0_1')
+@click.command()
+@click.argument('single_path', type=click.Path(exists=True, readable=True))
+@click.argument('double_path', type=click.Path(exists=True, readable=True))
+@click.argument('file_name', type=click.Path)
+def main(single_path, double_path, file_name):
+    load_data(single_path, double_path, file_name)
 
 
 if __name__ == '__main__':
