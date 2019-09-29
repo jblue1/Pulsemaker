@@ -1,48 +1,62 @@
 import numpy as np
-import pandas as pd
 
 
-def load_timeoffset_data(single_data_path, double_data_path, num_pulses, file_name):
+def load_by_string(single_path, double_path, file_name):
     """
     Takes traces from text data and loads them into a numpy array. Each row is a trace, first 500 columns are trace
-     data, last 2 columns are time offsets. Saves the array.
-    :param str single_data_path: Path to .txt file containing data from single pulses
-    :param str double_data_path: Path to .txt file containing data from double pulses
-    :param int num_pulses: Number of pulses to load
+    data, last 2 columns are time offsets. Saves the array.
+    :param str single_path: Path to .txt file containing data from single pulses
+    :param str double_path: Path to .txt file containing data from double pulses
     :param str file_name: Name for .npy file
     """
-    df1 = pd.read_csv(single_data_path, delimiter=' ', header=None,
-                      names=['nsamples', 'A1', 'K1', 'K2', 'X1', 'C', 'A2', 'K3', 'K4', 'X2'], index_col=False)
-    df2 = pd.read_csv(double_data_path, delimiter=' ', header=None,
-                      names=['nsamples', 'A1', 'K1', 'K2', 'X1', 'C', 'A2', 'K3', 'K4', 'X2'], index_col=False)
-
-    df = df1.append(df2, ignore_index=True)
-    meanA = np.mean(df['A1'])
-    stdA = np.std(df['A1'])
-    maxX1 = np.max(df['X1'])
-    maxX2 = np.max(df['X2'])
-    trace_data = np.zeros((502, num_pulses))
+    with open(single_path) as f:
+        str = f.read()
+    list = str.split('\n500')
+    num_pulses = len(list)
+    data = np.zeros((502, num_pulses*2))
     for i in range(num_pulses):
-        if i % 100 == 0:
+        if i % 500 == 0:
             print(i)
-        index1 = i * 500 + i + 1
-        index2 = index1 + 500
-        trace_data[:500, i:i + 1] = (df[['A1']][index1:index2] - meanA) / stdA
-        targets = np.transpose(np.array(df[['X1', 'X2']][index1 - 1:index1]))
-        trace_data[500, i:i + 1] = (targets[0]) / maxX1
-        trace_data[501, i:i + 1] = targets[1] / maxX2
+        lines = list[i].split('\n')
+        targets = lines[0].split()
+        if i < 1:
+            data[500, i] = float(targets[4])
+            data[501, i] = float(targets[9])
+        else:
+            data[500, i] = float(targets[3])
+            data[501, i] = float(targets[8])
+        data[:500, i] = np.genfromtxt(lines, skip_header=1, usecols=(1))
+    with open(double_path) as f:
+         str = f.read()
+    list = str.split('\n500')
+    for i in range(num_pulses):
+        if i % 500 == 0:
+            print(i)
+        lines = list[i].split('\n')
+        targets = lines[0].split()
+        if i < 1:
+            data[500, i + num_pulses] = float(targets[4])
+            data[501, i + num_pulses] = float(targets[9])
+        else:
+            data[500, i + num_pulses] = float(targets[3])
+            data[501, i + num_pulses] = float(targets[8])
+        data[:500, i + num_pulses] = np.genfromtxt(lines, skip_header=1, usecols=(1))
 
-    trace_data = np.transpose(trace_data)
-    np.random.shuffle(trace_data)  # shuffle data along first axis
-
-    np.save(file_name, trace_data)
+    print(data.shape)
+    data = np.transpose(data)
+    print(data.shape)
+    print(data.mean(0).shape)
+    np.save(file_name, data)
 
 
 def main():
-    load_timeoffset_data('~/ML-Research/Pulsemaker/pulsemaker/pulsemaker/singles_10k_0_1.txt',
-                         '~/ML-Research/Pulsemaker/pulsemaker/pulsemaker/doubles_10k_0_1.txt',
-                         20000,
-                         '20k_singles_doubles_0_1')
+    load_by_string('singles_100k_0_1.txt',
+                   'doubles_100k_0_1.txt',
+                   '200k_singles_doubles_0')
+    #load_timeoffset_data('singles_100k_0_1.txt',
+                        # 'doubles_100k_0_1.txt',
+                        # 200000,
+                         #'200k_singles_doubles_0_1')
 
 
 if __name__ == '__main__':
