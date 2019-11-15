@@ -9,6 +9,12 @@ from contextlib import redirect_stdout
 import numpy as np
 
 
+def percent_error(y_true, y_pred):
+    true = tf.keras.backend.sum(y_true)
+    pred = tf.keras.backend.sum(y_pred)
+    return (abs(true - pred) / true) * 100
+
+
 def plot_loss(loss, val_loss, mae, save_dir):
     """
     Makes a plot of training and validation loss over the course of training.
@@ -56,7 +62,7 @@ def write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number):
 @click.option('--batch_size', default=32)
 @click.option('--num_pulses', default=-1)
 @click.option('--epochs', default=50)
-@click.option('--lr', default=0.001, help='Learning rate for Adam optimizer')
+@click.option('--lr', default=0.0001, help='Learning rate for Adam optimizer')
 @click.option('--run_number', default=1, help='ith run of the day')
 def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
     today = str(date.today())
@@ -82,15 +88,15 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
             model.summary()
 
     adam = tf.keras.optimizers.Adam(lr=lr)
-    model.compile(optimizer=adam, loss='mse', metrics=['mae'])
+    model.compile(optimizer=adam, loss='mse', metrics=['mae', percent_error])
     data = np.load(data_path)
+    print('Loaded Data')
     features = data[:, :500]
     features_conv = data[:, :500]
-    targets = data[:, 500:]
+    targets = data[:, 500:502]
     features_conv = features_conv / np.max(features_conv)
     features_conv = tf.expand_dims(features_conv, -1)
-    features -= features.mean(0)
-    features /= features.std(0)
+    features = features / np.max(features)
     targets /= targets.max(axis=0)
     checkpoint_path = os.path.join(save_dir, "checkpoints/cp-{epoch:04d}.ckpt")
     cp_callback = tf.keras.callbacks.ModelCheckpoint(
@@ -106,10 +112,12 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
 
     loss = pd.Series(history.history['loss'])
     val_loss = pd.Series(history.history['val_loss'])
-    mae = pd.Series(history.history['mae'])
+    mae = pd.Series(history.history['val_mae'])
+    p_error = pd.Series(history.history['val_percent_error'])
     loss_df = pd.DataFrame({'Training Loss': loss,
                             'Val Loss': val_loss,
-                            'MAE': mae})
+                            'MAE': mae,
+                            'Percent Error': p_error})
     filename = os.path.join(save_dir, 'losses.csv')
     loss_df.to_csv(filename)  # save losses for further plotting/analysis
     plot_loss(loss, val_loss, mae, save_dir)
