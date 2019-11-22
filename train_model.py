@@ -36,7 +36,7 @@ def plot_loss(loss, val_loss, mae, save_dir):
     plt.close()
 
 
-def write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number):
+def write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number, times):
     """
     Writes a text file to the save directory with a summary of the hyper-parameters used for training
     :param str save_dir: path to directory to save the file to
@@ -45,13 +45,15 @@ def write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number):
     :param int epochs: number of epochs network was trained for
     :param float lr: learning rate for the optimizer
     :param str run_number: Run number of the day
+    :param bool times: Was the model trained on time (true) or energies (false)
     """
     filename = os.path.join(save_dir, 'run_info.txt')
     info_list = ['ContextEncoder Hyper-parameters: Run {} \n'.format(run_number),
                  'Training data found at: {} \n'.format(data_path),
                  'Batch Size: {} \n'.format(batch_size),
                  'Epochs: {} \n'.format(epochs),
-                 'Learning Rate: {} \n'.format(lr)]
+                 'Learning Rate: {} \n'.format(lr),
+                 'Times: {} \n'.format(times)]
 
     with open(filename, 'w') as f:
         f.writelines(info_list)
@@ -64,7 +66,8 @@ def write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number):
 @click.option('--epochs', default=50)
 @click.option('--lr', default=0.0001, help='Learning rate for Adam optimizer')
 @click.option('--run_number', default=1, help='ith run of the day')
-def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
+@click.option('--times/--energies', default=True)
+def main(data_path, batch_size, num_pulses, epochs, lr, run_number, times):
     today = str(date.today())
     run_number = '_' + str(run_number)
     save_dir = './Run_' + today + run_number
@@ -78,7 +81,7 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
             return
     else:
         os.makedirs(save_dir)
-    write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number)
+    write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number, times)
 
     model = build_net.build_combo()
     # write .txt file with model summary
@@ -89,20 +92,28 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
 
     adam = tf.keras.optimizers.Adam(lr=lr)
     model.compile(optimizer=adam, loss='mse', metrics=['mae', percent_error])
+
+    # load and normalize data
     data = np.load(data_path)
     print('Loaded Data')
     features = data[:, :500]
     features_conv = data[:, :500]
-    targets = data[:, 500:502]
+    if times:
+        targets = data[:, 500:502]
+    else:
+        targets = data[:, 502:]
     features_conv = features_conv / np.max(features_conv)
     features_conv = tf.expand_dims(features_conv, -1)
     features = features / np.max(features)
     targets /= targets.max(axis=0)
+
+    # set up checkpoints
     checkpoint_path = os.path.join(save_dir, "checkpoints/cp-{epoch:04d}.ckpt")
     cp_callback = tf.keras.callbacks.ModelCheckpoint(
         checkpoint_path, verbose=1, save_weights_only=True,
         # Save weights, every 5-epochs.
         period=5)
+
     history = model.fit([features, features_conv],
                         targets,
                         validation_split=0.2,
@@ -110,6 +121,7 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number):
                         batch_size=batch_size,
                         callbacks=[cp_callback])
 
+    # save losses in dataframe
     loss = pd.Series(history.history['loss'])
     val_loss = pd.Series(history.history['val_loss'])
     mae = pd.Series(history.history['val_mae'])
