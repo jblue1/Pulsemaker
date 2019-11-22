@@ -31,9 +31,9 @@ def load_data(single_path, double_path, file_name):
             k1 = float(targets[2])
             k2 = float(targets[3])
             x1 = float(targets[4])
-            x2 = float(targets[9])
+            assert x1 > 0
             data[500, i] = x1  # time offset for first pulse
-            data[501, i] = x2  # time offset for second pulse
+            # single pulse, so  second time offset is 0
             data[502, i] = functions.pulseAmplitude(A1, k1, k2, x1)  # first pulse energy
             # single pulse, so second pulse energy is zero
         else:
@@ -41,10 +41,11 @@ def load_data(single_path, double_path, file_name):
             k1 = float(targets[1])
             k2 = float(targets[2])
             x1 = float(targets[3])
-            x2 = float(targets[8])
+            assert x1 > 0
             data[500, i] = x1  # time offset for first pulse
-            data[501, i] = x2  # time offset for second pulse
+            # single pulse, so  second time offset is 0
             data[502, i] = functions.pulseAmplitude(A1, k1, k2, x1)  # first pulse energy
+            assert data[502, i] > 0
             # single pulse, so second pulse energy is zero
         data[:500, i] = np.genfromtxt(lines, skip_header=1, usecols=(1))
 
@@ -52,12 +53,12 @@ def load_data(single_path, double_path, file_name):
     with open(double_path) as f:
          str = f.read()
     list = str.split('\n500')
-    for i in range(num_pulses):
-        if i % 500 == 0:
-            print(i)
-        lines = list[i].split('\n')
+    for j in range(num_pulses):
+        if j % 500 == 0:
+            print(j)
+        lines = list[j].split('\n')
         targets = lines[0].split()
-        if i < 1:
+        if j < 1:
             # have to cast from string to float
             A1 = float(targets[1])
             k1 = float(targets[2])
@@ -67,10 +68,15 @@ def load_data(single_path, double_path, file_name):
             k3 = float(targets[7])
             k4 = float(targets[8])
             x2 = float(targets[9])
-            data[500, i] = x1  # time offset for first pulse
-            data[501, i] = x2  # time offset for second pulse
-            data[502, i] = functions.pulseAmplitude(A1, k1, k2, x1)  # first pulse energy
-            data[502, i] = functions.pulseAmplitude(A2, k3, k4, x2)  # second pulse energy
+            assert x1 > 0
+            assert x2 > 0
+            assert x1 < x2
+            data[500, j + num_pulses] = x1  # time offset for first pulse
+            data[501, j + num_pulses] = x2  # time offset for second pulse
+            data[502, j + num_pulses] = functions.pulseAmplitude(A1, k1, k2, x1)  # first pulse energy
+            data[503, j + num_pulses] = functions.pulseAmplitude(A2, k3, k4, x2)  # second pulse energy
+            assert data[502, j + num_pulses] > 0
+            assert data[503, j + num_pulses] > 0
 
         else:
             A1 = float(targets[0])
@@ -81,12 +87,17 @@ def load_data(single_path, double_path, file_name):
             k3 = float(targets[6])
             k4 = float(targets[7])
             x2 = float(targets[8])
-            data[500, i + num_pulses] = x1  # time offset for first pulse
-            data[501, i + num_pulses] = x2  # time offset for second pulse
-            data[502, i + num_pulses] = functions.pulseAmplitude(A1, k1, k2, x1)  # first pulse energy
-            data[502, i + num_pulses] = functions.pulseAmplitude(A2, k3, k4, x2)  # second pulse energy
+            assert x1 > 0
+            assert x2 > 0
+            assert x1 < x2
+            data[500, j + num_pulses] = x1  # time offset for first pulse
+            data[501, j + num_pulses] = x2  # time offset for second pulse
+            data[502, j + num_pulses] = functions.pulseAmplitude(A1, k1, k2, x1)  # first pulse energy
+            data[503, j + num_pulses] = functions.pulseAmplitude(A2, k3, k4, x2)  # second pulse energy
+            assert data[502, j + num_pulses] > 0
+            assert data[503, j + num_pulses] > 0
 
-        data[:500, i + num_pulses] = np.genfromtxt(lines, skip_header=1, usecols=(1))
+        data[:500, j + num_pulses] = np.genfromtxt(lines, skip_header=1, usecols=(1))
 
     data = np.transpose(data)
     np.random.shuffle(data)
