@@ -7,12 +7,28 @@ import build_net
 import pandas as pd
 from contextlib import redirect_stdout
 import numpy as np
+from tensorflow.keras.callbacks import Callback
 
 
-def percent_error(y_true, y_pred):
-    true = tf.keras.backend.sum(y_true)
-    pred = tf.keras.backend.sum(y_pred)
-    return (abs(true - pred) / true) * 100
+class Metrics(Callback):
+    def __init__(self, val_features, val_features_conv, val_targets):
+        self.val_features = val_features
+        self.val_features_conv = val_features_conv
+        self.val_targ = val_targets
+
+    def on_train_begin(self, logs={}):
+        self.val_percent_errors = []
+
+    def on_epoch_end(self, epoch, logs={}):
+        val_predict = (np.asarray(self.model.predict([self.val_features, self.val_features_conv])))
+
+        error = np.abs(self.val_targ[:, 0] - val_predict[:, 0])
+        _val_percent_error = np.average((error / self.val_targ[:, 0]) * 100)
+        self.val_percent_errors.append(_val_percent_error)
+
+        print(' - validation single pulse percent error: {} % '.format(_val_percent_error))
+        print(' ')
+        return
 
 
 def plot_loss(loss, val_loss, mae, save_dir):
@@ -83,7 +99,10 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number, times):
         os.makedirs(save_dir)
     write_info_file(save_dir, data_path, batch_size, epochs, lr, run_number, times)
 
-    model = build_net.build_combo()
+    if times:
+        model = build_net.time_model()
+    else:
+        model = build_net.energy_model()
     # write .txt file with model summary
     filename = os.path.join(save_dir, 'modelsummary.txt')
     with open(filename, 'w') as f:
@@ -91,7 +110,7 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number, times):
             model.summary()
 
     adam = tf.keras.optimizers.Adam(lr=lr)
-    model.compile(optimizer=adam, loss='mse', metrics=['mae', percent_error])
+    model.compile(optimizer=adam, loss='mse', metrics=['mae'])
 
     # load and normalize data
     data = np.load(data_path)
@@ -100,12 +119,26 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number, times):
     features_conv = data[:, :500]
     if times:
         targets = data[:, 500:502]
+        print(targets.max(axis=0))
+        targets /= targets.max(axis=0)
     else:
+        print('Loading energies as target data')
         targets = data[:, 502:]
+        targets /= np.std(targets, axis=0)
     features_conv = features_conv / np.max(features_conv)
     features_conv = tf.expand_dims(features_conv, -1)
     features = features / np.max(features)
-    targets /= targets.max(axis=0)
+
+
+    split = round(0.8 * len(features))
+    train_features = features[:split]
+    val_features = features[split:]
+
+    train_targets = targets[:split]
+    val_targets = targets[split:]
+
+    train_features_conv = features_conv[:split]
+    val_features_conv = features_conv[split:]
 
     # set up checkpoints
     checkpoint_path = os.path.join(save_dir, "checkpoints/cp-{epoch:04d}.ckpt")
@@ -113,23 +146,21 @@ def main(data_path, batch_size, num_pulses, epochs, lr, run_number, times):
         checkpoint_path, verbose=1, save_weights_only=True,
         # Save weights, every 5-epochs.
         period=5)
-
-    history = model.fit([features, features_conv],
-                        targets,
-                        validation_split=0.2,
+    metrics = Metrics(val_features, val_features_conv, val_targets)
+    history = model.fit([train_features, train_features_conv],
+                        train_targets,
+                        validation_data=([val_features, val_features_conv], val_targets),
                         epochs=epochs,
                         batch_size=batch_size,
-                        callbacks=[cp_callback])
+                        callbacks=[cp_callback, metrics])
 
     # save losses in dataframe
     loss = pd.Series(history.history['loss'])
     val_loss = pd.Series(history.history['val_loss'])
     mae = pd.Series(history.history['val_mae'])
-    p_error = pd.Series(history.history['val_percent_error'])
     loss_df = pd.DataFrame({'Training Loss': loss,
                             'Val Loss': val_loss,
-                            'MAE': mae,
-                            'Percent Error': p_error})
+                            'MAE': mae})
     filename = os.path.join(save_dir, 'losses.csv')
     loss_df.to_csv(filename)  # save losses for further plotting/analysis
     plot_loss(loss, val_loss, mae, save_dir)
